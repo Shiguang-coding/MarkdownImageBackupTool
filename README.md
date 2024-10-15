@@ -162,6 +162,8 @@ java.lang.RuntimeException: 每小时内你最多可以上传 100 张图片
 
 ## 使用示例
 
+> 更多详细介绍可参考文章：[批量备份迁移 Markdown 文件中的图片解决方案](https://blog.shiguang666.eu.org/2024/10/15/6b65681b29d7/)
+
 假设你有一个 Markdown 文件目录 `D:\\Desktop\\test`，并且你想将图片备份到 `D:\\Desktop` 目录下。你可以按照以下步骤操作：
 
 1. 修改 `MarkdownImageBackup.java` 文件中的配置参数：
