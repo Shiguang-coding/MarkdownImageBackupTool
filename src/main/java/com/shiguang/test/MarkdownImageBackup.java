@@ -1,20 +1,16 @@
 package com.shiguang.test;
 
+import org.apache.commons.lang3.StringUtils;
+import org.json.JSONObject;
+
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.*;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import org.apache.commons.lang3.StringUtils;
-import org.json.JSONException;
-import org.json.JSONObject;
 
 public class MarkdownImageBackup {
 
@@ -23,7 +19,6 @@ public class MarkdownImageBackup {
         boolean uploadToImageBed = false;
         // 是否将图床图片路径替换为本地图片路径
         boolean replaceImageBedWithLocal = false;
-
         // 指定Markdown文件所在的目录
         String markdownFolderPath = "D:\\Desktop\\test";
         // 指定图片备份的目标目录
@@ -130,8 +125,24 @@ public class MarkdownImageBackup {
             // 只处理Markdown文件（以.md结尾的文件）
             if (file.isFile() && fileName.endsWith(".md")) {
                 System.out.println("开始处理文件: " + fileName);
-                // 处理每个Markdown文件
-                processMarkdownFile(file, markdownFolderPath, outputFolderPath, imageUploadUrl, authToken, uploadToImageBed, replaceImageBedWithLocal);
+                try {
+                    // 处理每个Markdown文件
+                    processMarkdownFile(file, markdownFolderPath, outputFolderPath, imageUploadUrl, authToken, uploadToImageBed, replaceImageBedWithLocal);
+                } catch (Exception e) {
+                    System.err.println("处理文件 " + fileName + " 时发生错误: " + e.getMessage());
+//                     e.printStackTrace();
+                    // 生成错误日志文件
+                    Path logDir = Paths.get(outputFolderPath + File.separator + "logs", fileName.replace(".md", ""));
+                    if (!Files.exists(logDir)) {
+                        Files.createDirectories(logDir);
+                    }
+                    Path errorLogFile = logDir.resolve("error_log.txt");
+                    try (BufferedWriter writer = Files.newBufferedWriter(errorLogFile)) {
+                        writer.write("处理文件 " + fileName + " 时发生错误: " + e.getMessage());
+                        e.printStackTrace(new PrintWriter(writer));
+                        writer.write("\n");
+                    }
+                }
             }
         }
     }
@@ -168,7 +179,7 @@ public class MarkdownImageBackup {
         Matcher matcher = pattern.matcher(content);
 
         // 创建日志文件目录
-        Path logDir = Paths.get("D:\\Desktop\\logs", fileName);
+        Path logDir = Paths.get(outputFolderPath + File.separator + "logs", fileName);
         if (!Files.exists(logDir)) {
             Files.createDirectories(logDir);
         }
@@ -177,13 +188,16 @@ public class MarkdownImageBackup {
         Path localToImageBedLogFile = null;
         Path imageBedToLocalLogFile = null;
         Path contentLogFile = null;
+        Path absoluteToRelativeLogFile = null;
         BufferedWriter localToImageBedWriter = null;
         BufferedWriter imageBedToLocalWriter = null;
         BufferedWriter contentLogWriter = null;
+        BufferedWriter absoluteToRelativeWriter = null;
 
         // 如果需要替换路径，创建相应的日志文件
         boolean hasLocalToImageBed = false;
         boolean hasImageBedToLocal = false;
+        boolean hasAbsoluteToRelative = false;
 
         if (uploadToImageBed) {
             localToImageBedLogFile = logDir.resolve("local_to_imagebed.txt");
@@ -197,50 +211,80 @@ public class MarkdownImageBackup {
         }
         contentLogFile = logDir.resolve("content_log.txt");
         contentLogWriter = Files.newBufferedWriter(contentLogFile);
+        absoluteToRelativeLogFile = logDir.resolve("absolute_to_relative.txt");
+        absoluteToRelativeWriter = Files.newBufferedWriter(absoluteToRelativeLogFile);
+        absoluteToRelativeWriter.write("本地绝对路径替换为相对路径:\n");
 
         // 用于存储已经替换过的图片路径
         Map<String, String> replacedImages = new HashMap<>();
+
+        boolean needToGenerateNewFile = false;
 
         try {
             // 遍历匹配到的所有图片路径
             while (matcher.find()) {
                 // 获取图片路径
                 String imagePath = matcher.group(1);
-                // 判断图片路径是本地资源还是图床资源
-                if (imagePath.startsWith("http") || imagePath.startsWith("https")) {
-                    // 下载图床资源图片
-                    if (replaceImageBedWithLocal) {
-                        String localImagePath = replacedImages.get(imagePath);
-                        if (localImagePath == null) {
-                            localImagePath = downloadImage(imagePath, outputDir);
-                            replacedImages.put(imagePath, localImagePath);
-                        }
-                        content = content.replace(imagePath, localImagePath);
-                        imageBedToLocalWriter.write(imagePath + " -> " + localImagePath + "\n");
-                        hasImageBedToLocal = true;
-                    } else {
-                        downloadImage(imagePath, outputDir);
-                    }
-                } else {
-                    // 复制本地资源图片到指定目录
-                    copyLocalImage(imagePath, markdownFolderPath, outputDir);
-
-                    // 上传本地资源图片到图床
-                    if (uploadToImageBed) {
-                        String newImagePath = replacedImages.get(imagePath);
-                        if (newImagePath == null) {
-                            newImagePath = uploadImageToImageBed(imagePath, markdownFolderPath, imageUploadUrl, authToken, 1);
-                            if ("".equals(newImagePath)) {
-                                continue;
+                try {
+                    // 判断图片路径是本地资源还是图床资源
+                    if (imagePath.startsWith("http") || imagePath.startsWith("https")) {
+                        // 下载图床资源图片
+                        if (replaceImageBedWithLocal) {
+                            String localImagePath = replacedImages.get(imagePath);
+                            if (localImagePath == null) {
+                                localImagePath = downloadImage(imagePath, outputDir);
+                                replacedImages.put(imagePath, localImagePath);
                             }
-                            replacedImages.put(imagePath, newImagePath);
+                            content = content.replace(imagePath, localImagePath);
+                            imageBedToLocalWriter.write(imagePath + " -> " + localImagePath + "\n");
+                            hasImageBedToLocal = true;
+                            needToGenerateNewFile = true;
+                        } else {
+                            downloadImage(imagePath, outputDir);
                         }
-                        // 替换Markdown文件中的图片路径
-                        content = content.replace(imagePath, newImagePath);
-                        localToImageBedWriter.write(imagePath + " -> " + newImagePath + "\n");
-                        hasLocalToImageBed = true;
+                    } else {
+                        // 复制本地资源图片到指定目录
+                        String localImagePath = copyLocalImage(imagePath, markdownFolderPath, outputDir);
+
+                        // 上传本地资源图片到图床
+                        if (uploadToImageBed) {
+                            String newImagePath = replacedImages.get(imagePath);
+                            if (newImagePath == null) {
+                                newImagePath = uploadImageToImageBed(imagePath, markdownFolderPath, imageUploadUrl, authToken, 1);
+                                replacedImages.put(imagePath, newImagePath);
+                            }
+                            // 替换Markdown文件中的图片路径
+                            content = content.replace(imagePath, newImagePath);
+                            localToImageBedWriter.write(imagePath + " -> " + newImagePath + "\n");
+                            hasLocalToImageBed = true;
+                            needToGenerateNewFile = true;
+                        } else {
+
+                            content = content.replace(imagePath, localImagePath);
+                            absoluteToRelativeWriter.write(imagePath + " -> " + localImagePath + "\n");
+                            hasAbsoluteToRelative = true;
+                            needToGenerateNewFile = true;
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("处理图片 " + imagePath + " 时发生错误: " + e.getMessage());
+//                    e.printStackTrace();
+                    // 生成错误日志文件
+                    Path errorLogFile = logDir.resolve("error_log.txt");
+                    if (!Files.exists(errorLogFile)) {
+                        Files.createFile(errorLogFile);
+                    }
+                    try (BufferedWriter writer = Files.newBufferedWriter(errorLogFile, StandardOpenOption.APPEND)) {
+                        writer.write("处理图片 " + imagePath + " 时发生错误: " + e.getMessage() + "\n");
+                        e.printStackTrace(new PrintWriter(writer));
+                        writer.write("\n");
                     }
                 }
+            }
+
+            // 如果不需要生成新的文件，直接返回
+            if (!needToGenerateNewFile) {
+                return;
             }
 
             // 将替换后的内容写入新的Markdown文件
@@ -271,13 +315,53 @@ public class MarkdownImageBackup {
             }
             if (contentLogWriter != null) {
                 contentLogWriter.close();
-                if (!hasLocalToImageBed && !hasImageBedToLocal) {
+                if (!hasLocalToImageBed && !hasImageBedToLocal && !needToGenerateNewFile) {
                     Files.deleteIfExists(contentLogFile);
                 } else {
                     System.out.println("替换前和替换后的文本值已保存到: " + contentLogFile);
                 }
             }
+            if (absoluteToRelativeWriter != null) {
+                absoluteToRelativeWriter.close();
+                if (!hasAbsoluteToRelative) {
+                    Files.deleteIfExists(absoluteToRelativeLogFile);
+                } else {
+                    System.out.println("本地绝对路径替换为相对路径的日志已保存到: " + absoluteToRelativeLogFile);
+                }
+            }
         }
+    }
+
+    /**
+     * 复制本地资源图片到指定目录
+     *
+     * @param imagePath          本地图片的路径（相对路径或绝对路径）
+     * @param markdownFolderPath Markdown文件所在的目录
+     * @param outputDir          图片保存的目标目录
+     * @return 本地图片的相对路径
+     * @throws IOException 如果发生I/O错误
+     */
+    private static String copyLocalImage(String imagePath, String markdownFolderPath, Path outputDir) throws IOException {
+        Path sourcePath;
+        // 判断图片路径是否是绝对路径
+        if (Paths.get(imagePath).isAbsolute()) {
+            sourcePath = Paths.get(imagePath);
+        } else {
+            // 拼接Markdown文件所在的目录获取图片的完整路径
+            sourcePath = Paths.get(markdownFolderPath, imagePath);
+        }
+
+        // 获取图片的文件名
+        String fileName = sourcePath.getFileName().toString();
+        // 构建图片保存的目标路径
+        Path outputPath = outputDir.resolve(fileName);
+
+        // 复制图片到目标路径
+        Files.copy(sourcePath, outputPath, StandardCopyOption.REPLACE_EXISTING);
+        System.out.println("本地资源图片已保存到: " + outputPath);
+
+        // 返回本地图片的相对路径
+        return outputDir.getFileName().toString() + File.separator + fileName;
     }
 
     /**
@@ -306,33 +390,6 @@ public class MarkdownImageBackup {
         return outputDir.getFileName().toString() + File.separator + fileName;
     }
 
-    /**
-     * 复制本地资源图片到指定目录
-     *
-     * @param imagePath          本地图片的路径（相对路径或绝对路径）
-     * @param markdownFolderPath Markdown文件所在的目录
-     * @param outputDir          图片保存的目标目录
-     * @throws IOException 如果发生I/O错误
-     */
-    private static void copyLocalImage(String imagePath, String markdownFolderPath, Path outputDir) throws IOException {
-        Path sourcePath;
-        // 判断图片路径是否是绝对路径
-        if (Paths.get(imagePath).isAbsolute()) {
-            sourcePath = Paths.get(imagePath);
-        } else {
-            // 拼接Markdown文件所在的目录获取图片的完整路径
-            sourcePath = Paths.get(markdownFolderPath, imagePath);
-        }
-
-        // 获取图片的文件名
-        String fileName = sourcePath.getFileName().toString();
-        // 构建图片保存的目标路径
-        Path outputPath = outputDir.resolve(fileName);
-
-        // 复制图片到目标路径
-        Files.copy(sourcePath, outputPath, StandardCopyOption.REPLACE_EXISTING);
-        System.out.println("本地资源图片已保存到: " + outputPath);
-    }
 
     /**
      * 上传本地资源图片到图床
@@ -433,26 +490,21 @@ public class MarkdownImageBackup {
     private static String parseImageUrlFromResponse(String response) {
         // 假设响应格式为 {"status":true,"message":"Success","data":{"key":"xxx","name":"xxx","pathname":"xxx","origin_name":"xxx","size":xxx,"mimetype":"xxx","extension":"xxx","md5":"xxx","sha1":"xxx","links":{"url":"xxx","thumbnail_url":"xxx"}}}
         // 或者 {"status":false,"message":"错误消息","data":{}}
-        try {
-            // 解析JSON响应
-            JSONObject jsonResponse = new JSONObject(response);
-            boolean status = jsonResponse.getBoolean("status");
-            if (status) {
-                // 上传成功，提取图片访问URL
-                JSONObject data = jsonResponse.getJSONObject("data");
-                JSONObject links = data.getJSONObject("links");
-                String imageUrl = links.getString("url");
-                return imageUrl;
-            } else {
-                // 上传失败，提取错误消息
-                String errorMessage = jsonResponse.getString("message");
-                System.out.println("上传失败: " + errorMessage);
-                return "";
-            }
-        } catch (JSONException e) {
-            e.printStackTrace();
-            System.out.println("解析响应失败: " + e.getMessage());
-            return "";
+
+        // 解析JSON响应
+        JSONObject jsonResponse = new JSONObject(response);
+        boolean status = jsonResponse.getBoolean("status");
+        if (status) {
+            // 上传成功，提取图片访问URL
+            JSONObject data = jsonResponse.getJSONObject("data");
+            JSONObject links = data.getJSONObject("links");
+            String imageUrl = links.getString("url");
+            return imageUrl;
+        } else {
+            // 上传失败，提取错误消息
+            String errorMessage = jsonResponse.getString("message");
+            throw new RuntimeException(errorMessage);
         }
+
     }
 }

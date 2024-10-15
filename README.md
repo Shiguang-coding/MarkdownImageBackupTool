@@ -5,7 +5,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-MarkdownImageBackupTool 是一个用于批量备份 Markdown 文件中图片的工具。它可以将本地图片上传到图床服务并替换图片路径，或者将图床图片下载到本地并替换图片路径。生成的 Markdown 文件会直接保存到指定的目标目录，而图片则保存到以文章名称命名的文件夹内。
+MarkdownImageBackupTool 是一个用于批量备份迁移 Markdown 文件中图片的工具。它可以将本地图片上传到图床服务并替换图片路径，或者将图床图片下载到本地并替换图片路径。生成的 Markdown 文件会直接保存到指定的目标目录，而图片则保存到以文章名称命名的文件夹内。
 
 ## 功能特性
 
@@ -16,6 +16,7 @@ MarkdownImageBackupTool 是一个用于批量备份 Markdown 文件中图片的�
 - **图片下载到本地**：将图床图片下载到本地，并替换 Markdown 文件中的图片路径。
 - **生成新的 Markdown 文件**：生成的 Markdown 文件会直接保存到指定的目标目录，而图片则保存到以文章名称命名的文件夹内。
 - **日志记录**：记录图片路径替换的日志，方便查看和追溯。
+- **异常处理**：记录处理过程中出现的错误，方便问题排查和处理。
 
 ### 批量处理功能
 
@@ -39,16 +40,20 @@ MarkdownImageBackupTool 提供了详细的日志记录功能，帮助你跟踪�
    - `local_to_imagebed.txt`：记录本地图片路径替换为图床路径的日志。
    - `imagebed_to_local.txt`：记录图床图片路径替换为本地路径的日志。
    - `content_log.txt`：记录替换前和替换后的 Markdown 文件内容。
+   - `absolute_to_relative.txt`: 记录本地图片绝对路径替换为本地图片相对路径的日志。
+   - `error_log`: 记录处理过程中出现的错误信息。
 
 3. **日志内容**：
 
-   - `local_to_imagebed.txt` 和 `imagebed_to_local.txt` 文件中会记录每条路径替换的详细信息，格式如下：
+   - `local_to_imagebed.txt` 、 `imagebed_to_local.txt`、`absolute_to_relative.txt` 文件中会记录每条路径替换的详细信息，格式如下：
 
      ```bash
      原路径 -> 新路径
      ```
 
    - `content_log.txt` 文件中会记录替换前和替换后的 Markdown 文件内容，方便你对比和检查。
+   
+   - `error_log` 文件中会记录每张图片处理失败的原因和堆栈信息。
 
 #### 日志示例
 
@@ -82,6 +87,28 @@ https://your_img_server_path/image2.png -> example/image2.png
 ![Image 2](https://your_img_server_path/image2.png)
 ```
 
+`absolute_to_relative.txt`
+
+```bash
+本地绝对路径替换为相对路径:
+C:/Users/shiguang/AppData/Roaming/Typora/typora-user-images/image-20241015141151848.png -> error-src-refspec-main-does-not-match-any\image-20241015141151848.png
+C:/Users/shiguang/AppData/Roaming/Typora/typora-user-images/image-20241015141717812.png -> error-src-refspec-main-does-not-match-any\image-20241015141717812.png
+```
+
+`error_log`
+
+```bash
+处理图片 C:/Users/shiguang/AppData/Roaming/Typora/typora-user-images/image-20241015120316901.png 时发生错误: 每小时内你最多可以上传 100 张图片
+java.lang.RuntimeException: 每小时内你最多可以上传 100 张图片
+	at com.shiguang.test.MarkdownImageBackup.parseImageUrlFromResponse(MarkdownImageBackup.java:508)
+	at com.shiguang.test.MarkdownImageBackup.uploadImageToImageBed(MarkdownImageBackup.java:480)
+	at com.shiguang.test.MarkdownImageBackup.processMarkdownFile(MarkdownImageBackup.java:255)
+	at com.shiguang.test.MarkdownImageBackup.backupImagesFromMarkdownFiles(MarkdownImageBackup.java:132)
+	at com.shiguang.test.MarkdownImageBackup.main(MarkdownImageBackup.java:39)
+```
+
+
+
 通过这些日志文件，你可以清晰地了解每个 Markdown 文件中图片路径的替换过程，方便后续的检查和追溯。
 
 ## 安装
@@ -96,7 +123,7 @@ https://your_img_server_path/image2.png -> example/image2.png
 1. 克隆仓库到本地：
 
    ```bash
-   git clone https://github.com/yourusername/MarkdownImageBackupTool.git
+   git clone https://github.com/Shiguang-coding/MarkdownImageBackupTool.git
    cd MarkdownImageBackupTool
    ```
    
